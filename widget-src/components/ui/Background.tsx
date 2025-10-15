@@ -1,97 +1,91 @@
+// widget-src/components/ui/Background.tsx
+
 // Dependencies
 const { Rectangle, Frame, Image } = figma.widget
-// Components
+// Legacy assets (fallback)
 import { LatestDark64, LatestLight64, FlatDark64, FlatLight64 } from "@/assets/base64"
 
-/** Import Changelog
- * Darkmode handle with prop
- * modemask for theme with hidden (mask not available)
- * merged flat and latest
- */
-
 interface BackgroundProps extends ReqCompProps, Partial<FrameProps> {
-   type?: "flat" | "latest"
+  /** ЛЕГАСИ: старый пресет обоев */
+  type?: "flat" | "latest"
+  /** НОВОЕ: внешний вид (тема/цвет/картинка) */
+  appearance?: ChatAppearance
+  /** НОВОЕ: прямой проброс картинки-обоев */
+  imageHash?: string
+  /** НОВОЕ: прямой проброс цвета (если appearance не задан) */
+  fillColor?: string
 }
 
-export function Background({ theme, type = "latest", ...props }: BackgroundProps) {
-   return (
-      <Frame name="BackgroundLatest" width={225} height={626} {...props}>
-         <Image
-            name="last-light"
-            x={{
-               type: "left-right",
-               leftOffset: 0,
-               rightOffset: 0,
-            }}
-            y={{
-               type: "top-bottom",
-               topOffset: -10,
-               bottomOffset: -10,
-            }}
-            width={225}
-            height={646}
-            src={type === "latest" ? LatestLight64 : FlatLight64}
-         />
-         <Frame
-            name="dark mode only"
-            hidden={theme !== "dark"}
-            x={{
-               type: "left-right",
-               leftOffset: 0,
-               rightOffset: 0,
-            }}
-            y={{
-               type: "top-bottom",
-               topOffset: 0,
-               bottomOffset: -5,
-            }}
-            strokeWidth={0}
-            overflow="visible"
-            width={225}
-            height={631}
-         >
-            <Rectangle
-               name="mode mask"
-               x={{
-                  type: "left-right",
-                  leftOffset: 0,
-                  rightOffset: 0,
-               }}
-               y={{
-                  type: "top-bottom",
-                  topOffset: 0,
-                  bottomOffset: 0,
-               }}
-               fill={{
-                  opacity: 0,
-                  type: "solid",
-                  color: {
-                     r: 1,
-                     g: 1,
-                     b: 1,
-                     a: 1,
-                  },
-               }}
-               width={225}
-               height={631}
-            />
-            <Image
-               name="last-dark"
-               x={{
-                  type: "left-right",
-                  leftOffset: 0,
-                  rightOffset: 0,
-               }}
-               y={{
-                  type: "top-bottom",
-                  topOffset: -21.168,
-                  bottomOffset: -22.176,
-               }}
-               width={225}
-               height={674.343}
-               src={type === "latest" ? LatestDark64 : FlatDark64}
-            />
-         </Frame>
-      </Frame>
-   )
+/**
+ * Background
+ * Приоритет:
+ * 1) appearance.bgKind === "image" && (appearance.bgImageHash || imageHash)
+ * 2) solid (appearance.bgColor || fillColor)
+ * 3) Легаси: base64-обои по type+theme
+ */
+export function Background({ theme, type = "latest", appearance, imageHash, fillColor, ...props }: BackgroundProps) {
+  const kind = appearance?.bgKind
+  const hash = appearance?.bgImageHash ?? imageHash
+  const color =
+    appearance?.bgColor ??
+    fillColor ??
+    (appearance?.theme
+      ? appearance.theme === "dark"
+        ? "#0e0f12"
+        : "#ffffff"
+      : theme === "dark"
+      ? "#0e0f12"
+      : "#ffffff")
+
+  const useImage =
+    (kind === "image" && !!hash) ||
+    (!!hash && kind !== "solid") // если явно передали imageHash — используем
+
+  const useSolid =
+    kind === "solid" ||
+    (!!fillColor && !useImage) ||
+    (!!appearance?.bgColor && !useImage)
+
+  const legacySrc =
+    type === "latest"
+      ? theme === "dark"
+        ? LatestDark64
+        : LatestLight64
+      : theme === "dark"
+      ? FlatDark64
+      : FlatLight64
+
+  return (
+    <Frame
+      name="Background"
+      clipContent
+      width={"fill-parent"}
+      height={"fill-parent"}
+      {...props}
+    >
+      {useImage ? (
+        <Image
+          name="wallpaper-image"
+          imageHash={hash as string}
+          width={"fill-parent"}
+          height={"fill-parent"}
+        />
+      ) : useSolid ? (
+        <Rectangle
+          name="wallpaper-solid"
+          width={"fill-parent"}
+          height={"fill-parent"}
+          fill={color}
+        />
+      ) : (
+        // Легаси обои (base64)
+        <Image
+          name="wallpaper-legacy"
+          src={legacySrc}
+          width={"fill-parent"}
+          height={"fill-parent"}
+        />
+      )}
+    </Frame>
+  )
 }

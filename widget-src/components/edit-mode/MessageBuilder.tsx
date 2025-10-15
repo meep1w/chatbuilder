@@ -9,7 +9,7 @@ import { EDITOR_STATE, EDITOR_INPUTS } from "@/constants"
 // Internal atoms
 import {
   Section, Label, ButtonsRow, Button,
-  ButtomSmall, ChatButtonEditable, Selector, TextInput, Icon, Slider
+  ButtomSmall, ChatButtonEditable, Selector, TextInput, Icon, Slider, DropZone
 } from "@/components/edit-mode/atoms"
 
 interface MessageBuilderProps extends Partial<AutoLayoutProps>, ReqCompProps {
@@ -27,10 +27,23 @@ const nowHHMM = (): string => {
   return `${h}:${m}`
 }
 
+// Универсально создаём Image и возвращаем hash (поддержка разных API)
+async function createImageFromBytes(bytes: Uint8Array): Promise<string> {
+  // @ts-ignore
+  if (typeof figma.createImageAsync === "function") {
+    // @ts-ignore
+    const img = await figma.createImageAsync(bytes)
+    return img.hash
+  }
+  // @ts-ignore
+  const img = figma.createImage(bytes)
+  return img.hash
+}
+
 export function MessageBuilder({ editorManager, renderElement, theme, ...props }: MessageBuilderProps) {
   const [
     // editor
-    { dir, type, text, name, extension, size, buttons, hidePreview, isImg, time, autoTime },
+    { dir, type, text, name, extension, size, buttons, hidePreview, isImg, time, autoTime, imageHash },
     setEditorState,
     // chat
     setChatState
@@ -86,9 +99,8 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
     setEditorState("buttons", [...buttons, [{ id: 1, text: `Button ${buttons.length}-1`, hasRef: false }]])
   }
 
-  /** Добавление сообщения с поддержкой id + времени + автоскролла */
+  /** Добавление сообщения с поддержкой id + времени + imageHash + автоскролла */
   const addMessageToChat = () => {
-    // готовим новое сообщение
     const newMessage: Message = {
       id: `${Date.now()}`,
       dir,
@@ -100,9 +112,9 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       buttons,
       isImg,
       time: autoTime ? nowHHMM() : (time || nowHHMM()),
+      imageHash, // ← важно: сохранится превью картинки
     }
 
-    // Помещаем в chatState.messages, сохраняя группировку по направлению
     setChatState("messages", (prevMessages) => {
       const allMsgs = [...(prevMessages ?? [])]
       const dirMsgs = allMsgs.pop()
@@ -117,13 +129,11 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       return allMsgs
     })
 
-    // Сбросить оффсет пагинации к концу, если включён автоскролл
     setChatState("paging", (p: Paging | undefined) => {
       if (!p) return p as any
       return p.autoScrollToEnd ? { ...p, offset: 0 } : p
     })
 
-    // Переключить сторону (как было)
     setEditorState("dir", (prev) => ((prev + 1) % EDITOR_INPUTS.dir.map.length) as typeof prev)
   }
 
@@ -245,7 +255,7 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           />
         </Section>
 
-        {/* Message Type File (index 0 в исходном проекте) */}
+        {/* Message Type File (index 0) */}
         <Section hidden={type !== 0}>
           <Label colorPalette={color}>Image Details</Label>
           <TextInput onEvent={(e) => setEditorState("name", e.characters)} value={name} placeholder="Image/ File Name" colorPalette={color} />
@@ -291,7 +301,16 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
             colorPalette={color}
           />
           <ButtonsSection />
-          <TextInput onEvent={console.log} value={"Preview Image"} placeholder="Image Source" opacity={0.5} colorPalette={color} />
+          {/* NEW: drop preview image */}
+          <DropZone
+            label={imageHash ? "Replace preview image (drop new)" : "Drop preview image"}
+            onDropBytes={async (bytes) => {
+              const hash = await createImageFromBytes(bytes)
+              setEditorState("imageHash", hash)
+              // если тип не image — переключим
+              setEditorState("type", 2 as any)
+            }}
+          />
         </Section>
 
         {/* ===== NEW: Message time ===== */}
@@ -299,11 +318,7 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           <Label colorPalette={color}>Message time</Label>
           <ButtonsRow>
             <Text fill={color.text.default}>Auto time</Text>
-            <Slider
-              onEvent={() => setEditorState("autoTime", (v) => !v)}
-              value={!!autoTime}
-              colorPalette={color}
-            />
+            <Slider onEvent={() => setEditorState("autoTime", (v) => !v)} value={!!autoTime} colorPalette={color} />
           </ButtonsRow>
           <TextInput
             onEvent={(e) => setEditorState("time", e.characters)}
@@ -315,7 +330,7 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           />
         </Section>
 
-        {/* ===== NEW: Profile (name, last seen) ===== */}
+        {/* ===== NEW: Profile (name, last seen, avatar) ===== */}
         <Section>
           <Label colorPalette={color}>Profile</Label>
           <TextInput
@@ -330,7 +345,13 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
             placeholder="Last seen / Status (e.g., online)"
             colorPalette={color}
           />
-          {/* Аватарку добавим через drop-хэндлер отдельно при необходимости */}
+          <DropZone
+            label="Drop avatar image"
+            onDropBytes={async (bytes) => {
+              const hash = await createImageFromBytes(bytes)
+              setChatState("profile", (p: ProfileInfo | undefined) => ({ ...(p ?? { name: "", lastSeen: "last seen just now" }), avatarHash: hash }))
+            }}
+          />
         </Section>
 
         {/* ===== NEW: System bar ===== */}
@@ -361,10 +382,21 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           </ButtonsRow>
         </Section>
 
-        {/* ===== NEW: Background ===== */}
+        {/* ===== NEW: Background (solid + wallpaper) ===== */}
         <Section>
           <Label colorPalette={color}>Background</Label>
-          {/* Тип фона: упрощённо — toggler Solid/Image */}
+
+          <DropZone
+            label="Drop wallpaper image"
+            onDropBytes={async (bytes) => {
+              const hash = await createImageFromBytes(bytes)
+              setChatState("appearance", (a: ChatAppearance | undefined) => {
+                const cur = a ?? { theme, bgKind: "solid", bgColor: theme === "dark" ? "#0e0f12" : "#ffffff" }
+                return { ...cur, bgKind: "image", bgImageHash: hash }
+              })
+            }}
+          />
+
           <ButtonsRow>
             <Text fill={color.text.default}>Image background</Text>
             <Slider
@@ -378,6 +410,7 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
               colorPalette={color}
             />
           </ButtonsRow>
+
           <TextInput
             onEvent={(e) =>
               setChatState("appearance", (a: ChatAppearance | undefined) => {
@@ -389,7 +422,6 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
             placeholder="Solid color (hex, e.g., #0e0f12)"
             colorPalette={color}
           />
-          {/* Загрузка картинки как фона можно добавить отдельным дроп-атомом (imageHash) */}
         </Section>
 
         {/* ===== NEW: Composer ===== */}

@@ -9,8 +9,8 @@ import { IosHeaderStatus, ProfilePic } from "@/components/ui/atoms"
 
 /** Import Changelog
  * - Динамические name/lastSeen из profile
- * - Совместимость: если придёт value — используем его, иначе profile.name
- * - profilePicSrc остаётся строкой (конвертацию avatarHash -> src делаем выше)
+ * - Поддержка avatarHash (imageHash) + fallback на profilePicSrc
+ * - Прокидываем system в IosHeaderStatus
  * - Цвета через remapTokens
  */
 
@@ -18,13 +18,15 @@ interface HeaderProps
   extends ReqCompProps,
     Partial<AutoLayoutProps>,
     ContainsEvent<[TextEditEvent]> {
-  /** Источник аватарки (готовый src); avatarHash конвертируем выше */
+  /** Источник аватарки (готовый src, fallback) */
   profilePicSrc?: string
-  /** Профиль чата: name/lastSeen */
+  /** Профиль чата: name/lastSeen/avatarHash */
   profile: ProfileInfo
+  /** Системная строка: время/батарея/зарядка */
+  system?: SystemBar
 }
 
-export function Header({ value, profilePicSrc, profile, onEvent, theme, ...props }: HeaderProps) {
+export function Header({ value, profilePicSrc, profile, system, onEvent, theme, ...props }: HeaderProps) {
   /** Required by children (Drilled Props) */
   const reqChildProps = { theme }
 
@@ -76,8 +78,8 @@ export function Header({ value, profilePicSrc, profile, onEvent, theme, ...props
         height={89}
       />
 
-      {/* Системная строка (время/иконки) — параметры времени/батареи прокинем из PhoneFrame */}
-      <IosHeaderStatus {...reqChildProps} width={"fill-parent"} name="_ios/HeaderStatus" />
+      {/* Системная строка */}
+      <IosHeaderStatus {...reqChildProps} system={system} width={"fill-parent"} name="_ios/HeaderStatus" />
 
       <AutoLayout
         name="ChatHeader"
@@ -105,7 +107,8 @@ export function Header({ value, profilePicSrc, profile, onEvent, theme, ...props
 
         <ProfilePic
           name="profile-pic/HawkMoney"
-          profilePicSrc={profilePicSrc ?? ""}
+          imageHash={profile?.avatarHash}     // ← используем imageHash, если есть
+          profilePicSrc={profilePicSrc ?? ""} // ← fallback на src
           strokeWidth={0.925}
           width={37}
           height={37}

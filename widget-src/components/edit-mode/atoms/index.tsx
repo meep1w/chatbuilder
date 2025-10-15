@@ -409,3 +409,33 @@ export function Slider({ colorPalette, value, ...props }: SliderProps) {
       </AutoLayout>
    )
 }
+
+// ↓↓↓ вставь этот блок в конец файла
+
+export function DropZone({ label, onDropBytes, ...props }: { label: string; onDropBytes: (bytes: Uint8Array) => Promise<void> | void } & Partial<AutoLayoutProps>) {
+  const onDrop = figma.widget.useDropHandler(async (drop) => {
+    const f = drop.files?.[0]
+    if (!f) return
+    if (!(f.type || "").startsWith("image/")) return
+    const bytes = await f.getBytesAsync()
+    await onDropBytes(bytes)
+  })
+
+  return (
+    <AutoLayout
+      name="DropZone"
+      width={"fill-parent"}
+      height={44}
+      cornerRadius={8}
+      stroke={"#FFFFFF22"}
+      strokeDashPattern={[8, 6]}
+      verticalAlignItems="center"
+      horizontalAlignItems="center"
+      hoverStyle={{ stroke: "#FFFFFF44" }}
+      onDrop={onDrop}
+      {...props}
+    >
+      <Text opacity={0.85}>{label}</Text>
+    </AutoLayout>
+  )
+}

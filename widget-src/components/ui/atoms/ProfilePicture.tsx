@@ -1,20 +1,51 @@
+// widget-src/components/ui/atoms/ProfilePicture.tsx
+
 // Dependencies
-const { Frame, Image } = figma.widget
-// Components
+const { Frame, Image, Rectangle } = figma.widget
+// Fallback картинка (как раньше)
 import { PROFILE_IMAGES } from "@/constants"
 
-/** Import Changelog
- * SVG to base64 Image with props src
- */
-
 interface ProfilePicProps extends Partial<FrameProps> {
-   profilePicSrc?: string
+  /** Новый вариант — хэш картинки, полученный через figma.createImageAsync(bytes).hash */
+  imageHash?: string
+  /** Старый вариант — src/base64 (оставляем как фолбэк) */
+  profilePicSrc?: string
+  /** Размер аватарки (по умолчанию 37) */
+  size?: number
 }
 
-export function ProfilePic({ profilePicSrc = PROFILE_IMAGES[1], ...props }: ProfilePicProps) {
-   return (
-      <Frame name="ProfilePic" overflow="visible" width={37} height={37} {...props}>
-         <Image name="Preview" cornerRadius={50} strokeWidth={0} strokeAlign="center" width={37} height={37} src={profilePicSrc} />
-      </Frame>
-   )
+export function ProfilePic({
+  imageHash,
+  profilePicSrc = PROFILE_IMAGES[1],
+  size = 37,
+  ...props
+}: ProfilePicProps) {
+  return (
+    <Frame
+      name="ProfilePic"
+      overflow="hidden"
+      width={size}
+      height={size}
+      cornerRadius={size / 2}
+      {...props}
+    >
+      {imageHash ? (
+        <Image
+          name="PreviewHash"
+          imageHash={imageHash}
+          width={"fill-parent"}
+          height={"fill-parent"}
+        />
+      ) : profilePicSrc ? (
+        <Image
+          name="PreviewSrc"
+          src={profilePicSrc}
+          width={"fill-parent"}
+          height={"fill-parent"}
+        />
+      ) : (
+        <Rectangle width={"fill-parent"} height={"fill-parent"} fill={"#444"} />
+      )}
+    </Frame>
+  )
 }
