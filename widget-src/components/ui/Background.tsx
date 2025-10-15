@@ -56,13 +56,7 @@ export function Background({ theme, type = "latest", appearance, imageHash, fill
       : FlatLight64
 
   return (
-    <Frame
-      name="Background"
-      clipContent
-      width={"fill-parent"}
-      height={"fill-parent"}
-      {...props}
-    >
+     <Frame name="Background" overflow="hidden" width={"fill-parent"} height={"fill-parent"} {...props}>
       {useImage ? (
         <Image
           name="wallpaper-image"
