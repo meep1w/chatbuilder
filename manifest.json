@@ -5,18 +5,15 @@
   "main": "dist/code.js",
 
   "containsWidget": true,
-  "widgetApi": "1.0.0",
+  "widgetApi": "1.1.0",
 
   "editorType": ["figma"],
 
   "documentAccess": "dynamic-page",
-  "enableProposedApi": false,
+  "enableProposedApi": true,
   "capabilities": [],
 
   "networkAccess": {
     "allowedDomains": ["none"]
-  },
-
-
-  "containsDropDataTypes": ["image/*"]
+  }
 }
