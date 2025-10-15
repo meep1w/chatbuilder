@@ -1,21 +1,17 @@
 // widget-src/components/edit-mode/atoms/DropZone.tsx
-const { AutoLayout, Text } = figma.widget
+const { AutoLayout, Text, useDropHandler } = figma.widget
 
 interface DropZoneProps extends Partial<AutoLayoutProps> {
-  /** Подпись внутри зоны */
   label: string
-  /** Колбэк: отдадим байты первого перетянутого файла */
   onDropBytes: (bytes: Uint8Array) => Promise<void> | void
 }
 
 /** Простая drop-зона для изображений (image/*). Возвращает bytes первого файла. */
 export function DropZone({ label, onDropBytes, ...props }: DropZoneProps) {
-  const onDrop = figma.widget.useDropHandler(async (drop) => {
+  const onDrop = useDropHandler(async (drop) => {
     const f = drop.files?.[0]
     if (!f) return
-    // принимаем только изображения
-    const isImage = (f.type || "").startsWith("image/")
-    if (!isImage) return
+    if (!(f.type || "").startsWith("image/")) return
     const bytes = await f.getBytesAsync()
     await onDropBytes(bytes)
   })
