@@ -1,0 +1,21 @@
+{
+   "compilerOptions": {
+      "jsx": "react",
+      "jsxFactory": "figma.widget.h",
+      "jsxFragmentFactory": "figma.widget.Fragment",
+      // "target": "es2016",
+      "lib": ["es2017"],
+      // "strict": true,
+      "typeRoots": ["../node_modules/@types", "../node_modules/@figma"],
+      "baseUrl": ".", // Add baseUrl
+      "paths": {
+         "@/*": ["*"]
+      }, // Add paths mapping
+      "target": "es5",
+      "module": "commonjs",
+      "strict": true,
+      "esModuleInterop": true,
+      "skipLibCheck": true,
+      "forceConsistentCasingInFileNames": true
+   }
+}
