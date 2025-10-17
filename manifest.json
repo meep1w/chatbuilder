@@ -5,15 +5,11 @@
   "main": "dist/code.js",
 
   "containsWidget": true,
-  "widgetApi": "1.1.0",
+  "widgetApi": "1.0.0",
 
   "editorType": ["figma"],
-
   "documentAccess": "dynamic-page",
-  "enableProposedApi": true,
+  "enableProposedApi": false,
   "capabilities": [],
-
-  "networkAccess": {
-    "allowedDomains": ["none"]
-  }
+  "networkAccess": { "allowedDomains": ["none"] }
 }

@@ -38,33 +38,46 @@ declare global {
     id?: string
     /** НОВОЕ: время сообщения HH:MM (если не задано — можно подставлять авто) */
     time?: string
-    /** НОВОЕ: hash картинки (для типа image) */
+    /** НОВОЕ: источник картинки (data URL) для типа image=2 */
+    src?: string
+    /** НОВОЕ: естественные размеры картинки (для авто-масштаба) */
+    imgW?: number
+    imgH?: number
+    /** Совместимость: hash картинки (если используется createImageAsync) */
     imageHash?: string
   }
 
-  /** НОВОЕ: профиль чата (хедер) */
+  /** Профиль чата (хедер) */
   type ProfileInfo = {
-    name: string            // Заголовок (имя/название чата)
-    lastSeen: string        // "online" | "last seen just now" | любое
-    avatarHash?: string     // Хеш аватарки (figma.createImageAsync(...).hash)
+    /** Заголовок (имя/название чата) */
+    name: string
+    /** "online" | "last seen just now" | произвольное */
+    lastSeen: string
+    /** НОВОЕ: аватар как data URL */
+    avatarSrc?: string
+    /** Совместимость: хеш аватарки (figma.createImageAsync(...).hash) */
+    avatarHash?: string
   }
 
-  /** НОВОЕ: системная строка телефона (время/батарея) */
+  /** Системная строка телефона (время/батарея) */
   type SystemBar = {
     phoneTime: string       // "9:41"
     batteryPercent: number  // 0..100
     isCharging: boolean     // идёт зарядка
   }
 
-  /** НОВОЕ: внешний вид фон/тема */
+  /** Внешний вид: фон/тема */
   type ChatAppearance = {
     theme: "light" | "dark"
     bgKind: "solid" | "image"
     bgColor: string
+    /** НОВОЕ: фон как data URL */
+    bgImageSrc?: string
+    /** Совместимость: хеш фоновой картинки */
     bgImageHash?: string
   }
 
-  /** НОВОЕ: стили нижней панели (композер) */
+  /** Стили нижней панели (композер) */
   type ComposerStyle = {
     rounded: boolean
     showMic: boolean
@@ -72,7 +85,7 @@ declare global {
     placeholder: string
   }
 
-  /** НОВОЕ: пагинация/листание истории */
+  /** Пагинация/листание истории */
   type Paging = {
     window: number            // сколько сообщений показывать за раз
     offset: number            // смещение от конца (0 — показываем последние)
@@ -84,23 +97,28 @@ declare global {
     /** Сообщения (как и было) */
     messages?: (Message[] | undefined)[]
 
-    /** НОВОЕ: профиль */
+    /** Профиль */
     profile: ProfileInfo
-    /** НОВОЕ: системная строка */
+    /** Системная строка */
     system: SystemBar
-    /** НОВОЕ: внешний вид */
+    /** Внешний вид */
     appearance: ChatAppearance
-    /** НОВОЕ: нижняя панель */
+    /** Нижняя панель */
     composer: ComposerStyle
-    /** НОВОЕ: пагинация */
+    /** Пагинация */
     paging: Paging
   }
 
   /** Состояние редактора: добавили авто-время и флаг скрытия превью */
   type EditorState = Message & {
     hidePreview: boolean
-    /** НОВОЕ: если true — время подставляем автоматически при добавлении */
+    /** Если true — время подставляем автоматически при добавлении */
     autoTime: boolean
+    /** Ручное время HH:MM (используется если autoTime=false) */
+    time?: string
+    /** НОВОЕ: естественные размеры картинки для предпросмотра/сообщения */
+    imgW?: number
+    imgH?: number
   }
 }
 

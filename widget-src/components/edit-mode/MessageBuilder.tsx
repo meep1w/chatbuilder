@@ -4,22 +4,20 @@
 const { AutoLayout, Text } = figma.widget
 // Utils & Hooks
 import { remapTokens } from "@/utils"
-import { type SetterProp } from "@/hooks"
+import { type SetterProp, useDynamicState } from "@/hooks"
 import { EDITOR_STATE, EDITOR_INPUTS } from "@/constants"
 // Internal atoms
 import {
   Section, Label, ButtonsRow, Button,
-  ButtomSmall, ChatButtonEditable, Selector, TextInput, Icon, Slider, DropZone
+  ButtomSmall, ChatButtonEditable, Selector, TextInput, Icon, Slider
 } from "@/components/edit-mode/atoms"
 
 interface MessageBuilderProps extends Partial<AutoLayoutProps>, ReqCompProps {
-  /** Fully Hide from layers tree */
   renderElement: boolean
-  /** Editor State Manager (New Message Inputs Centralized State at base code.tsx) & setChatState */
   editorManager: [EditorState, SetterProp<EditorState>, SetterProp<ChatState>]
 }
 
-// helpers
+// ===== helpers =====
 const nowHHMM = (): string => {
   const d = new Date()
   const h = String(d.getHours()).padStart(2, "0")
@@ -27,27 +25,96 @@ const nowHHMM = (): string => {
   return `${h}:${m}`
 }
 
-// Универсально создаём Image и возвращаем hash (поддержка разных API)
-async function createImageFromBytes(bytes: Uint8Array): Promise<string> {
-  // @ts-ignore
-  if (typeof figma.createImageAsync === "function") {
-    // @ts-ignore
-    const img = await figma.createImageAsync(bytes)
-    return img.hash
+/** base64 → Uint8Array */
+function base64ToBytes(b64: string): Uint8Array {
+  const table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  const clean = b64.replace(/[\r\n\s]/g, "")
+  const len = clean.length
+  const placeHolders = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0
+  const arrLen = ((len * 3) >> 2) - placeHolders
+  const bytes = new Uint8Array(arrLen)
+  let L = 0
+  for (let i = 0; i < len; i += 4) {
+    const c0 = table.indexOf(clean[i])
+    const c1 = table.indexOf(clean[i + 1])
+    const c2 = table.indexOf(clean[i + 2])
+    const c3 = table.indexOf(clean[i + 3])
+    const n = (c0 << 18) | (c1 << 12) | ((c2 & 63) << 6) | (c3 & 63)
+    if (L < arrLen) bytes[L++] = (n >> 16) & 0xff
+    if (L < arrLen) bytes[L++] = (n >> 8) & 0xff
+    if (L < arrLen) bytes[L++] = n & 0xff
   }
-  // @ts-ignore
-  const img = figma.createImage(bytes)
-  return img.hash
+  return bytes
+}
+
+/** data URL → Uint8Array */
+function dataUrlToBytes(dataUrl: string): Uint8Array | null {
+  const m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/i.exec(dataUrl)
+  if (!m) return null
+  try { return base64ToBytes(m[2]) } catch { return null }
+}
+
+/** Строка похожа на hash (короткая, без префикса data:) */
+const looksLikeHash = (v?: string) => !!v && !v.startsWith("data:") && v.trim().length >= 40
+
+/** Извлечь размеры PNG/JPEG/GIF из bytes */
+function probeImageSize(bytes: Uint8Array): { w: number; h: number } | null {
+  if (bytes.length < 10) return null
+  // PNG
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    if (bytes.length >= 24) {
+      const w = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19]
+      const h = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]
+      return w > 0 && h > 0 ? { w, h } : null
+    }
+    return null
+  }
+  // GIF
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[5] === 0x61) {
+    const w = bytes[6] | (bytes[7] << 8)
+    const h = bytes[8] | (bytes[9] << 8)
+    return w > 0 && h > 0 ? { w, h } : null
+  }
+  // JPEG
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let i = 2
+    while (i + 9 < bytes.length) {
+      if (i >= bytes.length) break
+      if (bytes[i] !== 0xff) { i++; continue }
+      const marker = bytes[i + 1]
+      const len = (bytes[i + 2] << 8) | bytes[i + 3]
+      if (marker === 0xc0 || marker === 0xc2) {
+        if (i + 9 < bytes.length) {
+          const h = (bytes[i + 5] << 8) | bytes[i + 6]
+          const w = (bytes[i + 7] << 8) | bytes[i + 8]
+          return w > 0 && h > 0 ? { w, h } : null
+        }
+        return null
+      }
+      if (len < 2) break
+      i += 2 + len
+    }
+  }
+  return null
 }
 
 export function MessageBuilder({ editorManager, renderElement, theme, ...props }: MessageBuilderProps) {
   const [
     // editor
-    { dir, type, text, name, extension, size, buttons, hidePreview, isImg, time, autoTime, imageHash },
+    { dir, type, text, name, extension, size, buttons, hidePreview, isImg, time, autoTime, src, imgW, imgH, imageHash },
     setEditorState,
     // chat
     setChatState
   ] = editorManager
+
+  // ===== Локальное UI-состояние для тумблеров (только визуальное) =====
+  const [ui, setUI] = useDynamicState({
+    rounded: true,
+    showAttach: true,
+    showMic: true,
+    charging: false,
+    imageBg: false,
+  })
 
   /** Reset all Inputs to default */
   const resetInputs = () => {
@@ -55,9 +122,13 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       setEditorState(key as keyof EditorState, value as any)
     })
     setEditorState("autoTime", true)
+    setEditorState("src", "" as any)
+    setEditorState("imgW", undefined as any)
+    setEditorState("imgH", undefined as any)
+    setEditorState("imageHash", undefined as any)
   }
 
-  /** Overrides values of a specific button */
+  /** Кнопки под сообщением */
   const updateButton = (row: number, id: number, newvals: Partial<Message["buttons"][number][number]>) => {
     setEditorState(
       "buttons",
@@ -70,7 +141,6 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       )
     )
   }
-
   const addButtonToRow = (row: number, nextId: number) => {
     setEditorState(
       "buttons",
@@ -79,13 +149,10 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       )
     )
   }
-
   const removeButtonFromRow = (row: number, id: number) => {
     if (buttons[row].length === 1) {
-      // Remove row
       setEditorState("buttons", buttons.filter((_, rowIndex) => rowIndex !== row))
     } else {
-      // Remove Last Button
       setEditorState(
         "buttons",
         buttons.map((buttonsRow, rowIndex) =>
@@ -94,12 +161,11 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       )
     }
   }
-
   const addRowOfButtons = () => {
     setEditorState("buttons", [...buttons, [{ id: 1, text: `Button ${buttons.length}-1`, hasRef: false }]])
   }
 
-  /** Добавление сообщения с поддержкой id + времени + imageHash + автоскролла */
+  /** Добавление сообщения: id + время + imageHash/imgW/imgH (для image) + автоскролл; безопасная группировка */
   const addMessageToChat = () => {
     const newMessage: Message = {
       id: `${Date.now()}`,
@@ -112,21 +178,22 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       buttons,
       isImg,
       time: autoTime ? nowHHMM() : (time || nowHHMM()),
-      imageHash, // ← важно: сохранится превью картинки
+      // для скорости не тянем длинные data URL в историю
+      src: undefined,
+      imageHash: imageHash,
+      imgW: imgW as any,
+      imgH: imgH as any,
     }
 
-    setChatState("messages", (prevMessages) => {
-      const allMsgs = [...(prevMessages ?? [])]
-      const dirMsgs = allMsgs.pop()
-
-      if (typeof dirMsgs !== "undefined" && dirMsgs[0]?.dir === dir) {
-        dirMsgs.push(newMessage)
-        allMsgs.push(dirMsgs)
+    setChatState("messages", (prev = []) => {
+      const copy = Array.isArray(prev) ? [...prev] : []
+      const last = copy[copy.length - 1]
+      if (last && Array.isArray(last) && last[0]?.dir === dir) {
+        last.push(newMessage)
       } else {
-        allMsgs.push(dirMsgs)
-        allMsgs.push([newMessage])
+        copy.push([newMessage])
       }
-      return allMsgs
+      return copy
     })
 
     setChatState("paging", (p: Paging | undefined) => {
@@ -135,6 +202,87 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
     })
 
     setEditorState("dir", (prev) => ((prev + 1) % EDITOR_INPUTS.dir.map.length) as typeof prev)
+  }
+
+  // ===== Обработчики для картинок =====
+
+  /** Image Source: принимает и hash, и data URL */
+  const onChangeImageSrc = (value: string) => {
+    const v = (value || "").trim()
+    if (looksLikeHash(v)) {
+      // просто сохраняем hash; src чистим
+      setEditorState("imageHash", v as any)
+      setEditorState("src", "" as any)
+      // размеры неизвестны — оставляем прежние (если были) или undefined
+      return
+    }
+
+    // data URL → bytes → size → createImage → hash
+    setEditorState("src", v as any) // чтобы при необходимости видеть превью до очистки
+    const bytes = dataUrlToBytes(v)
+    if (!bytes) {
+      setEditorState("imgW", undefined as any)
+      setEditorState("imgH", undefined as any)
+      setEditorState("imageHash", undefined as any)
+      return
+    }
+    const sz = probeImageSize(bytes)
+    if (sz) {
+      setEditorState("imgW", sz.w as any)
+      setEditorState("imgH", sz.h as any)
+    } else {
+      setEditorState("imgW", undefined as any)
+      setEditorState("imgH", undefined as any)
+    }
+    const img = figma.createImage(bytes)
+    setEditorState("imageHash", img.hash as any)
+    setEditorState("src", "" as any) // очищаем длинную строку для скорости
+  }
+
+  /** Avatar: принимает и hash, и data URL */
+  const onChangeAvatar = (value: string) => {
+    const v = (value || "").trim()
+    if (looksLikeHash(v)) {
+      setChatState("profile", (p: ProfileInfo | undefined) => ({
+        ...(p ?? { name: "", lastSeen: "last seen just now" }),
+        avatarHash: v,
+        avatarSrc: undefined,
+      }))
+      return
+    }
+    const bytes = dataUrlToBytes(v)
+    if (!bytes) {
+      // не data URL — оставим как src (на твой fallback)
+      setChatState("profile", (p: ProfileInfo | undefined) => ({
+        ...(p ?? { name: "", lastSeen: "last seen just now" }),
+        avatarSrc: v,
+        avatarHash: undefined,
+      }))
+      return
+    }
+    const img = figma.createImage(bytes)
+    setChatState("profile", (p: ProfileInfo | undefined) => ({
+      ...(p ?? { name: "", lastSeen: "last seen just now" }),
+      avatarHash: img.hash,
+      avatarSrc: undefined,
+    }))
+  }
+
+  /** Wallpaper: принимает и hash, и data URL */
+  const onChangeWallpaper = (value: string) => {
+    const v = (value || "").trim()
+    setChatState("appearance", (a: ChatAppearance | undefined) => {
+      const cur = a ?? { theme, bgKind: "solid", bgColor: theme === "dark" ? "#0e0f12" : "#ffffff" }
+      if (looksLikeHash(v)) {
+        return { ...cur, bgKind: "image", bgImageHash: v, bgImageSrc: undefined }
+      }
+      const bytes = dataUrlToBytes(v)
+      if (!bytes) {
+        return { ...cur, bgImageSrc: v }
+      }
+      const img = figma.createImage(bytes)
+      return { ...cur, bgKind: "image", bgImageHash: img.hash, bgImageSrc: undefined }
+    })
   }
 
   // ===== Theme palette for editor panel =====
@@ -156,6 +304,43 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
       white: { dark: "#FFF", light: "#FFF" },
     },
   })[theme]
+
+  // ===== Переключатели (только на Slider.onEvent — без двойных кликов) =====
+  const toggleCharging = () => {
+    setUI("charging", (v) => !v)
+    setChatState("system", (s: SystemBar | undefined) => ({
+      ...(s ?? { phoneTime: "9:41", batteryPercent: 58, isCharging: false }),
+      isCharging: !(s?.isCharging ?? false),
+    }))
+  }
+  const toggleImageBg = () => {
+    setUI("imageBg", (v) => !v)
+    setChatState("appearance", (a: ChatAppearance | undefined) => {
+      const cur = a ?? { theme, bgKind: "solid", bgColor: theme === "dark" ? "#0e0f12" : "#ffffff" }
+      return { ...cur, bgKind: cur.bgKind === "solid" ? "image" : "solid" }
+    })
+  }
+  const toggleRounded = () => {
+    setUI("rounded", (v) => !v)
+    setChatState("composer", (c: ComposerStyle | undefined) => ({
+      ...(c ?? { rounded: true, showMic: true, showAttach: true, placeholder: "Message" }),
+      rounded: !(c?.rounded ?? true),
+    }))
+  }
+  const toggleShowAttach = () => {
+    setUI("showAttach", (v) => !v)
+    setChatState("composer", (c: ComposerStyle | undefined) => ({
+      ...(c ?? { rounded: true, showMic: true, showAttach: true, placeholder: "Message" }),
+      showAttach: !(c?.showAttach ?? true),
+    }))
+  }
+  const toggleShowMic = () => {
+    setUI("showMic", (v) => !v)
+    setChatState("composer", (c: ComposerStyle | undefined) => ({
+      ...(c ?? { rounded: true, showMic: true, showAttach: true, placeholder: "Message" }),
+      showMic: !(c?.showMic ?? true),
+    }))
+  }
 
   // ===== Reusable: секция кнопок под сообщением =====
   function ButtonsSection() {
@@ -262,19 +447,12 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           <TextInput onEvent={(e) => setEditorState("extension", e.characters)} value={extension} placeholder="Image/ File Extension" colorPalette={color} />
           <TextInput onEvent={(e) => setEditorState("size", e.characters)} value={size} placeholder="Image/ File Size" colorPalette={color} />
           <ButtonsSection />
-          <AutoLayout
-            onClick={() => setEditorState("isImg", (prev) => !prev)}
-            tooltip="File Preview Is Image"
-            width={"fill-parent"}
-            spacing={8}
-            padding={{ vertical: 0, horizontal: 16 }}
-            verticalAlignItems="center"
-          >
+          <ButtonsRow>
             <Text name="title" fill={color.text.default} width="fill-parent" lineHeight={22} fontSize={17} fontWeight={500}>
               Compressed Image
             </Text>
-            <Slider onEvent={console.log} value={isImg} colorPalette={color} />
-          </AutoLayout>
+            <Slider onEvent={() => setEditorState("isImg", (prev) => !prev)} value={isImg} colorPalette={color} />
+          </ButtonsRow>
         </Section>
 
         {/* Message Type Text (index 1) */}
@@ -300,20 +478,18 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
             isResizable={true}
             colorPalette={color}
           />
-          <ButtonsSection />
-          {/* NEW: drop preview image */}
-          <DropZone
-            label={imageHash ? "Replace preview image (drop new)" : "Drop preview image"}
-            onDropBytes={async (bytes) => {
-              const hash = await createImageFromBytes(bytes)
-              setEditorState("imageHash", hash)
-              // если тип не image — переключим
-              setEditorState("type", 2 as any)
-            }}
+          {/* Image Source: hash ИЛИ data URL */}
+          <TextInput
+            onEvent={(e) => onChangeImageSrc(e.characters)}
+            value={looksLikeHash(src as any) ? "" : ((src as any) ?? "")}
+            placeholder="Image Source (hash or data URL)"
+            isResizable={true}
+            colorPalette={color}
           />
+          <ButtonsSection />
         </Section>
 
-        {/* ===== NEW: Message time ===== */}
+        {/* ===== Message time ===== */}
         <Section>
           <Label colorPalette={color}>Message time</Label>
           <ButtonsRow>
@@ -330,7 +506,7 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           />
         </Section>
 
-        {/* ===== NEW: Profile (name, last seen, avatar) ===== */}
+        {/* ===== Profile ===== */}
         <Section>
           <Label colorPalette={color}>Profile</Label>
           <TextInput
@@ -345,16 +521,17 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
             placeholder="Last seen / Status (e.g., online)"
             colorPalette={color}
           />
-          <DropZone
-            label="Drop avatar image"
-            onDropBytes={async (bytes) => {
-              const hash = await createImageFromBytes(bytes)
-              setChatState("profile", (p: ProfileInfo | undefined) => ({ ...(p ?? { name: "", lastSeen: "last seen just now" }), avatarHash: hash }))
-            }}
+          {/* Avatar: hash или data URL */}
+          <TextInput
+            onEvent={(e) => onChangeAvatar(e.characters)}
+            value={""}
+            placeholder="Avatar image (hash or data URL)"
+            isResizable={true}
+            colorPalette={color}
           />
         </Section>
 
-        {/* ===== NEW: System bar ===== */}
+        {/* ===== System bar ===== */}
         <Section>
           <Label colorPalette={color}>System bar</Label>
           <TextInput
@@ -374,41 +551,26 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           />
           <ButtonsRow>
             <Text fill={color.text.default}>Charging</Text>
-            <Slider
-              onEvent={() => setChatState("system", (s: SystemBar | undefined) => ({ ...(s ?? { phoneTime: "9:41", batteryPercent: 58, isCharging: false }), isCharging: !(s?.isCharging ?? false) }))}
-              value={false}
-              colorPalette={color}
-            />
+            <Slider onEvent={toggleCharging} value={ui.charging} colorPalette={color} />
           </ButtonsRow>
         </Section>
 
-        {/* ===== NEW: Background (solid + wallpaper) ===== */}
+        {/* ===== Background ===== */}
         <Section>
           <Label colorPalette={color}>Background</Label>
 
-          <DropZone
-            label="Drop wallpaper image"
-            onDropBytes={async (bytes) => {
-              const hash = await createImageFromBytes(bytes)
-              setChatState("appearance", (a: ChatAppearance | undefined) => {
-                const cur = a ?? { theme, bgKind: "solid", bgColor: theme === "dark" ? "#0e0f12" : "#ffffff" }
-                return { ...cur, bgKind: "image", bgImageHash: hash }
-              })
-            }}
+          {/* Wallpaper: hash или data URL */}
+          <TextInput
+            onEvent={(e) => onChangeWallpaper(e.characters)}
+            value={""}
+            placeholder="Wallpaper image (hash or data URL)"
+            isResizable={true}
+            colorPalette={color}
           />
 
           <ButtonsRow>
             <Text fill={color.text.default}>Image background</Text>
-            <Slider
-              onEvent={() =>
-                setChatState("appearance", (a: ChatAppearance | undefined) => {
-                  const cur = a ?? { theme, bgKind: "solid", bgColor: theme === "dark" ? "#0e0f12" : "#ffffff" }
-                  return { ...cur, bgKind: cur.bgKind === "solid" ? "image" : "solid" }
-                })
-              }
-              value={false}
-              colorPalette={color}
-            />
+            <Slider onEvent={toggleImageBg} value={ui.imageBg} colorPalette={color} />
           </ButtonsRow>
 
           <TextInput
@@ -424,32 +586,20 @@ export function MessageBuilder({ editorManager, renderElement, theme, ...props }
           />
         </Section>
 
-        {/* ===== NEW: Composer ===== */}
+        {/* ===== Composer ===== */}
         <Section>
           <Label colorPalette={color}>Composer</Label>
           <ButtonsRow>
             <Text fill={color.text.default}>Rounded</Text>
-            <Slider
-              onEvent={() => setChatState("composer", (c: ComposerStyle | undefined) => ({ ...(c ?? { rounded: true, showMic: true, showAttach: true, placeholder: "Message" }), rounded: !(c?.rounded ?? true) }))}
-              value={true}
-              colorPalette={color}
-            />
+            <Slider onEvent={toggleRounded} value={ui.rounded} colorPalette={color} />
           </ButtonsRow>
           <ButtonsRow>
             <Text fill={color.text.default}>Show attach</Text>
-            <Slider
-              onEvent={() => setChatState("composer", (c: ComposerStyle | undefined) => ({ ...(c ?? { rounded: true, showMic: true, showAttach: true, placeholder: "Message" }), showAttach: !(c?.showAttach ?? true) }))}
-              value={true}
-              colorPalette={color}
-            />
+            <Slider onEvent={toggleShowAttach} value={ui.showAttach} colorPalette={color} />
           </ButtonsRow>
           <ButtonsRow>
             <Text fill={color.text.default}>Show mic</Text>
-            <Slider
-              onEvent={() => setChatState("composer", (c: ComposerStyle | undefined) => ({ ...(c ?? { rounded: true, showMic: true, showAttach: true, placeholder: "Message" }), showMic: !(c?.showMic ?? true) }))}
-              value={true}
-              colorPalette={color}
-            />
+            <Slider onEvent={toggleShowMic} value={ui.showMic} colorPalette={color} />
           </ButtonsRow>
           <TextInput
             onEvent={(e) => setChatState("composer", (c: ComposerStyle | undefined) => ({ ...(c ?? { rounded: true, showMic: true, showAttach: true, placeholder: "Message" }), placeholder: e.characters }))}

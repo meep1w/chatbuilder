@@ -12,7 +12,8 @@ import { FILE_LIGHT_IN64, FILE_LIGHT_OUT64, FILE_DARK64 } from "@/assets/base64/
 
 /* Import Changelog
  * + Поддержка imageHash для типа Image
- * Остальной код совместим с текущей архитектурой
+ * + Поддержка data URL через props.src для типа Image
+ * + Авто-размер картинки по imgW/imgH с ограничением по ширине
  */
 
 const ICON_MAP = {
@@ -41,7 +42,9 @@ type PropByType = [
   {
     /** Image */
     type: 2
-    src?: ""
+    /** data URL источника картинки */
+    src?: string
+    /** подпись под картинкой (необязательно) */
     text: string
   },
 ]
@@ -49,10 +52,13 @@ type PropByType = [
 interface MessageProps extends ReqCompProps, Partial<AutoLayoutProps> {
   dir: Message["dir"]
   type: Message["type"]
-  /** НОВОЕ: hash для изображения (тип Image) */
+  /** hash для изображения (тип Image) */
   imageHash?: string
-  /** НОВОЕ: время сообщения (если потом захочешь пробрасывать в StatusAtom) */
+  /** Время сообщения (HH:MM) */
   time?: string
+  /** Естественные размеры изображения для авто-масштабирования */
+  imgW?: number
+  imgH?: number
 }
 
 export function Message({ dir, theme, imageHash, ...props }: PropByType[number] & MessageProps): void {
@@ -123,7 +129,7 @@ export function Message({ dir, theme, imageHash, ...props }: PropByType[number] 
           y={{ type: "bottom", offset: 4 }}
           positioning="absolute"
           width={43}
-          // при желании можно передать props.time, если StatusAtom это поддерживает
+          time={(props as any).time}
         />
       </AutoLayout>
     )
@@ -189,6 +195,25 @@ export function Message({ dir, theme, imageHash, ...props }: PropByType[number] 
     case 2: {
       // Image
       const { text } = props
+      const srcFromProps = (props as any).src as string | undefined
+      const imgW = (props as any).imgW as number | undefined
+      const imgH = (props as any).imgH as number | undefined
+
+      // Ограничения (визуально совпадают с текущим дизайном)
+      const MAX_W = 276
+      const MIN_W = text ? 118 : 250 // если нет подписи — шире
+      // Если знаем реальные размеры, подгоняем пропорции, иначе — фолбэк
+      const hasSize = !!imgW && !!imgH && imgW! > 0 && imgH! > 0
+      const targetW = hasSize ? Math.max(MIN_W, Math.min(MAX_W, imgW!)) : MAX_W
+      const targetH = hasSize ? Math.round((imgH! / imgW!) * targetW) : (text ? 135 : 150)
+
+      const imageCorner = {
+        topLeft: layout.radius[dir].topLeft - 1,
+        topRight: layout.radius[dir].topRight - 1,
+        bottomRight: !text ? layout.radius[dir].bottomRight - 1 : 0,
+        bottomLeft: !text ? layout.radius[dir].bottomLeft - 1 : 0,
+      } as CornerRadius
+
       return (
         <Container>
           <AutoLayout
@@ -200,21 +225,16 @@ export function Message({ dir, theme, imageHash, ...props }: PropByType[number] 
             spacing={8}
             width="fill-parent"
           >
-            {/* НОВОЕ: если передан imageHash — используем его, иначе фолбэк на PreviewImage64 */}
+            {/* Если передан imageHash — используем его, иначе data URL из props.src, иначе фолбэк PreviewImage64 */}
             {imageHash ? (
               <Image
                 name="Rectangle 1"
                 x={{ type: "left-right", leftOffset: -13, rightOffset: -13 }}
                 y={{ type: "top-bottom", topOffset: -7, bottomOffset: !text ? -7 : 0 }}
                 positioning="absolute"
-                cornerRadius={{
-                  topLeft: layout.radius[dir].topLeft - 1,
-                  topRight: layout.radius[dir].topRight - 1,
-                  bottomRight: !text ? layout.radius[dir].bottomRight - 1 : 0,
-                  bottomLeft: !text ? layout.radius[dir].bottomLeft - 1 : 0,
-                }}
-                width={276}
-                height={142}
+                cornerRadius={imageCorner}
+                width={targetW}
+                height={targetH}
                 imageHash={imageHash}
               />
             ) : (
@@ -223,15 +243,10 @@ export function Message({ dir, theme, imageHash, ...props }: PropByType[number] 
                 x={{ type: "left-right", leftOffset: -13, rightOffset: -13 }}
                 y={{ type: "top-bottom", topOffset: -7, bottomOffset: !text ? -7 : 0 }}
                 positioning="absolute"
-                cornerRadius={{
-                  topLeft: layout.radius[dir].topLeft - 1,
-                  topRight: layout.radius[dir].topRight - 1,
-                  bottomRight: !text ? layout.radius[dir].bottomRight - 1 : 0,
-                  bottomLeft: !text ? layout.radius[dir].bottomLeft - 1 : 0,
-                }}
-                width={276}
-                height={142}
-                src={PreviewImage64}
+                cornerRadius={imageCorner}
+                width={targetW}
+                height={targetH}
+                src={srcFromProps || PreviewImage64}
               />
             )}
           </AutoLayout>

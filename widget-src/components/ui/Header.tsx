@@ -9,7 +9,7 @@ import { IosHeaderStatus, ProfilePic } from "@/components/ui/atoms"
 
 /** Import Changelog
  * - Динамические name/lastSeen из profile
- * - Поддержка avatarHash (imageHash) + fallback на profilePicSrc
+ * - Поддержка avatarSrc (data URL) / avatarHash (imageHash) + fallback на profilePicSrc
  * - Прокидываем system в IosHeaderStatus
  * - Цвета через remapTokens
  */
@@ -18,9 +18,9 @@ interface HeaderProps
   extends ReqCompProps,
     Partial<AutoLayoutProps>,
     ContainsEvent<[TextEditEvent]> {
-  /** Источник аватарки (готовый src, fallback) */
+  /** Источник аватарки (готовый src, fallback — на случай отсутствия profile.*) */
   profilePicSrc?: string
-  /** Профиль чата: name/lastSeen/avatarHash */
+  /** Профиль чата: name/lastSeen/avatarSrc/avatarHash */
   profile: ProfileInfo
   /** Системная строка: время/батарея/зарядка */
   system?: SystemBar
@@ -106,12 +106,14 @@ export function Header({ value, profilePicSrc, profile, system, onEvent, theme, 
         </AutoLayout>
 
         <ProfilePic
-          name="profile-pic/HawkMoney"
-          imageHash={profile?.avatarHash}     // ← используем imageHash, если есть
-          profilePicSrc={profilePicSrc ?? ""} // ← fallback на src
+          name="profile-pic"
+          // приоритет: data URL → imageHash → fallback
+          avatarSrc={profile?.avatarSrc || undefined}
+          imageHash={profile?.avatarHash}
+          profilePicSrc={profilePicSrc ?? ""}
           strokeWidth={0.925}
-          width={37}
-          height={37}
+          // ВАЖНО: используем size, НЕ width/height
+          size={37}
         />
 
         <AutoLayout

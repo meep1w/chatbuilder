@@ -11,12 +11,13 @@ interface InterfaceProps extends ReqCompProps, OptionalRender, Partial<FrameProp
   viewport: number
   chatId: number
 
-  /** НОВОЕ (необязательно): прокинутые сверху состояния */
+  /** Прокинутые сверху состояния */
   profile?: ProfileInfo
   appearance?: ChatAppearance
   composer?: ComposerStyle
+  system?: SystemBar
 
-  /** НОВОЕ: колбэк изменения имени (если хотим синкать наружу) */
+  /** Колбэк изменения имени (если хотим синкать наружу) */
   onProfileNameChange?: (name: string) => void
 }
 
@@ -30,10 +31,11 @@ export function Interface({
   profile,
   appearance,
   composer,
+  system,
   onProfileNameChange,
   ...props
 }: InterfaceProps) {
-  // ==== Совместимость со старым поведением (локальный state, если сверху не дали профиль) ====
+  // Совместимость со старым поведением (локальный state, если сверху не дали профиль)
   const [recipient, setRecipient] = useDynamicState({
     username: USERNAMES[chatId],
     image: PROFILE_IMAGES[chatId],
@@ -44,7 +46,7 @@ export function Interface({
   const screenW = vp?.width ?? 390
   const screenH = vp?.height ?? 844
 
-  // Размеры зон (как раньше):
+  // Размеры зон
   const HEADER_H = 89
   const BOTTOM_H = 80
   const chatAreaH = Math.max(0, screenH - HEADER_H - BOTTOM_H)
@@ -53,23 +55,24 @@ export function Interface({
   const effectiveProfile: ProfileInfo = {
     name: profile?.name ?? recipient.username ?? "",
     lastSeen: profile?.lastSeen ?? "last seen just now",
-    avatarHash: profile?.avatarHash, // если не дали — ProfilePic отрисует дефолтную из profilePicSrc
+    avatarSrc: profile?.avatarSrc,
+    avatarHash: profile?.avatarHash,
   }
 
-  // Фоновая тема/вид (по желанию можно расширить Background, здесь просто передаём размеры)
-  const effectiveAppearance = appearance ?? ({
+  // Фоновая тема/вид
+  const effectiveAppearance: ChatAppearance = appearance ?? {
     theme,
     bgKind: "solid",
     bgColor: theme === "dark" ? "#0e0f12" : "#ffffff",
-  } as ChatAppearance)
+  }
 
-  // Стили композера (нижней панели)
-  const effectiveComposer = composer ?? ({
+  // Стили композера
+  const effectiveComposer: ComposerStyle = composer ?? {
     rounded: true,
     showMic: true,
     showAttach: true,
     placeholder: "Message",
-  } as ComposerStyle)
+  }
 
   if (!renderElements) return children
 
@@ -91,9 +94,7 @@ export function Interface({
         y={{ type: "top-bottom", topOffset: HEADER_H, bottomOffset: BOTTOM_H }}
         width={screenW}
         height={chatAreaH}
-        // Если у вас Background поддерживает картинку — тут можно прокинуть imageHash/цвет
-        // imageHash={effectiveAppearance.bgKind === "image" ? effectiveAppearance.bgImageHash : undefined}
-        // fillColor={effectiveAppearance.bgKind === "solid" ? effectiveAppearance.bgColor : undefined}
+        appearance={effectiveAppearance}
       />
 
       {/* Нижняя панель ввода (композер) */}
@@ -103,8 +104,7 @@ export function Interface({
         x={{ type: "left-right", leftOffset: 0, rightOffset: 0 }}
         y={{ type: "bottom", offset: 0 }}
         width={screenW}
-        // НОВОЕ: можно передать стиль композера, если компонент поддерживает
-        // composer={effectiveComposer}
+        // composer={effectiveComposer} // включи, если BottomBar принимает
       />
 
       {/* Прокручиваемая область переписки */}
@@ -119,13 +119,13 @@ export function Interface({
         {children}
       </Frame>
 
-      {/* Хедер с именем/last seen/аватаром */}
+      {/* Хедер + системная строка */}
       <Header
         theme={theme}
         name="Header"
-        // Если есть avatarHash и ваш ProfilePic умеет imageHash — можно пробросить иначе через profilePicSrc
         profilePicSrc={recipient.image}
         profile={effectiveProfile}
+        system={system} // ← время/батарея обновляются
         onEvent={(e) => {
           const newName = e.characters
           onProfileNameChange ? onProfileNameChange(newName) : setRecipient("username", newName)

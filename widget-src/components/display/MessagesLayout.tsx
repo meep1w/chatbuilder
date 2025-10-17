@@ -69,7 +69,7 @@ export function MessagesLayout({
   // если включён режим "рендерим только последний пузырь" — используем последний из видимых
   const lastMessage = visibleList[visibleList.length - 1]
 
-  // для основного режима сгруппируем подряд идущие по направлению,
+  // для полного режима сгруппируем подряд идущие по направлению,
   // чтобы корректно рисовать DirectionContainer
   const grouped = groupByDirection(visibleList)
 
@@ -79,7 +79,8 @@ export function MessagesLayout({
       <>
         {lastMessage ? (
           <AutoLayout direction="vertical" spacing={28}>
-            <WithButtons buttons={lastMessage.buttons} theme={theme}>
+            <WithButtons buttons={lastMessage.buttons ?? []} theme={theme}>
+              {/* Спредом прокидываем ВСЕ поля, включая time/src/imgW/imgH */}
               <MessageBubble {...lastMessage} theme={theme} />
             </WithButtons>
             {children}
@@ -107,9 +108,10 @@ export function MessagesLayout({
       {...props}
     >
       {grouped.map((dirGroup, i) => (
-        <DirectionContainer key={i} dir={dirGroup[0].dir}>
+        <DirectionContainer key={`dir-${i}`} dir={dirGroup[0].dir}>
           {dirGroup.map((msg, j) => (
-            <WithButtons key={msg.id ?? `${i}_${j}`} buttons={msg.buttons} theme={theme}>
+            <WithButtons key={msg.id ?? `m-${i}-${j}`} buttons={msg.buttons ?? []} theme={theme}>
+              {/* Спредом прокидываем ВСЕ поля, включая time/src/imgW/imgH */}
               <MessageBubble {...msg} theme={theme} />
             </WithButtons>
           ))}

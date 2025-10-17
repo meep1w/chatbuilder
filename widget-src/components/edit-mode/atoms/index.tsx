@@ -1,3 +1,5 @@
+// widget-src/components/edit-mode/atoms/index.tsx
+
 // Dependencies
 const { AutoLayout, Text, Input, SVG, Rectangle } = figma.widget
 
@@ -45,9 +47,17 @@ export function Label({ colorPalette, isCollapsable = false, children, ...props 
   )
 }
 
-export function ButtonsRow({ children, ...props }: Partial<CreatorCompKitConfig>) {
+export function ButtonsRow({ children, colorPalette, ...props }: Partial<CreatorCompKitConfig>) {
   return (
-    <AutoLayout name="Button Row" overflow="visible" spacing={12} width="fill-parent" verticalAlignItems="center" {...props}>
+    <AutoLayout
+      name="Button Row"
+      overflow="visible"
+      spacing={12}
+      width="fill-parent"
+      verticalAlignItems="center"
+      hoverStyle={{ fill: (props as any).onClick ? (colorPalette?.surface?.inputBg as string) : undefined }}
+      {...props}
+    >
       {children}
     </AutoLayout>
   )
@@ -317,11 +327,16 @@ export function Icon({ onEvent, icon, color, ...props }: IconProps) {
 
 interface SliderProps extends CreatorCompKitConfig, ContainsEvent<[WidgetClickEvent], boolean> {}
 
-/** Selector Conditional */
-export function Slider({ colorPalette, value, ...props }: SliderProps) {
+/** Toggle Slider — кликабелен по всей площади трека и по ручке */
+export function Slider({ colorPalette, value, onEvent, ...props }: SliderProps) {
+  const handleClick = (e: WidgetClickEvent) => {
+    onEvent?.(e)
+  }
+
   return (
     <AutoLayout
       name="Swipe"
+      onClick={handleClick}
       fill={colorPalette.surface?.inputBg}
       cornerRadius={81}
       overflow="visible"
@@ -330,10 +345,12 @@ export function Slider({ colorPalette, value, ...props }: SliderProps) {
       width={80}
       horizontalAlignItems={value ? "end" : "start"}
       verticalAlignItems="center"
+      hoverStyle={{ fill: colorPalette.surface?.actionHover }}
       {...props}
     >
       <Rectangle
         name="State"
+        onClick={handleClick}
         hoverStyle={{ fill: value ? colorPalette.surface?.primaryHover : colorPalette.surface?.actionHover }}
         fill={value ? colorPalette.surface?.primary : colorPalette.surface?.action}
         stroke={colorPalette.surface?.primary30}
@@ -345,5 +362,4 @@ export function Slider({ colorPalette, value, ...props }: SliderProps) {
   )
 }
 
-/* ---------- Реэкспорт вспомогательных атомов ---------- */
 export * from "./DropZone"
